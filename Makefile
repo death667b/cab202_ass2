@@ -7,8 +7,8 @@
 #
 
 # Modify these
-SRC=question_1
-CAB202_LIB_DIR=../cab202_teensy
+SRC=snake
+CAB202_LIB_DIR=./cab202_teensy
 
 # The rest should be all good as is
 FLAGS=-mmcu=atmega32u4 -Os -DF_CPU=8000000UL -std=gnu99 -Wall -Werror
