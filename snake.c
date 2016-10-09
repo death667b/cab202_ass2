@@ -36,17 +36,17 @@ void setup(void);
 void process_loop(void);
 void display_welcome_screen(void);
 void draw_topbar(void);
-void move_snake(void);
 void restart_round(void);
 void create_food(void);
 void food_eaten_test(void);
 void create_snake_train(void);
 void grow_snake_train(void);
-int collision_test(void);
+int tail_collision_test(int x, int y);
+int move_snake(void);
 
 int lives = 5;
 int score = 0;
-int snake_length = 10;
+int snake_length = 2;
 int start_x = 39, start_y = 21;
 
 volatile unsigned char btn_hists[NUM_BUTTONS];
@@ -113,8 +113,9 @@ void process_loop(){
 	
 	draw_topbar();
 	draw_sprite(&chow_time);
-	move_snake();
-	round_over = collision_test();
+	round_over = move_snake();
+	food_eaten_test();
+	//round_over = tail_collision_test();
 
 
 	for (int i = 0; i < snake_length; i++) {
@@ -166,11 +167,10 @@ void food_eaten_test(){
 }
 
 
-void move_snake() {
+int move_snake() {
 	int newx = 0, newy = 0;
 	int oldx = 0, oldy = 0;
-
-	score = snake_train[0].y;
+	int round_over = FALSE;
 
 	// Test for x axis wall collision
 	if ((snake_train[0].x + move_x) >= 82) {
@@ -190,6 +190,7 @@ void move_snake() {
 		newy = snake_train[0].y + (move_y*3);
 	}
 
+	round_over = tail_collision_test(newx, newy);
 
 	// Move Tail
 	if ( move_y != 0 || move_x != 0 ){
@@ -204,6 +205,8 @@ void move_snake() {
 		    newy = oldy;
 		}
 	}
+
+	return round_over;
 }
 
 void restart_round(){
@@ -236,15 +239,10 @@ void create_snake_train(){
 }
 
 
-int collision_test(){
-	int x = snake_train[0].x;
-	int y = snake_train[0].y;
+int tail_collision_test(int x, int y){
 	int round_over = FALSE;
 
-
 	for (int i = 1; i < snake_length; i++) {
-		food_eaten_test();
-
 		if (move_x == 0 && (move_y == -1 || move_y == 1)){ // Moving Up or Down
 			if ((snake_train[i].x == x+0 && snake_train[i].y == y+0) ||
 					(snake_train[i].x == x+1 && snake_train[i].y == y+0) ||
