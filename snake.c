@@ -33,6 +33,7 @@
 #define BTN_STATE_DOWN 1
 
 void setup(void);
+void create_walls(void);
 void process_loop(void);
 void display_welcome_screen(void);
 void draw_topbar(void);
@@ -41,6 +42,7 @@ void create_food(void);
 void food_eaten_test(void);
 void create_snake_train(void);
 void grow_snake_train(void);
+void create_food_co_ords(int *x, int *y);
 int tail_collision_test(int x, int y);
 int move_snake(void);
 
@@ -49,9 +51,14 @@ int score = 0;
 int snake_length = 2;
 int start_x = 39, start_y = 21;
 
+int w1_y1_y2, w1_x2;
+int w2_x1_x2, w2_y2;
+int w3_x1, w3_y1_y2, w3_x2;
+
 volatile unsigned char btn_hists[NUM_BUTTONS];
 volatile unsigned char btn_states[NUM_BUTTONS];
 volatile int move_x = 0, move_y = 0;
+volatile int walls_active = FALSE;
 
 
 Sprite *snake_train = NULL;
@@ -74,7 +81,7 @@ int main(){
 
 void setup(){
 	set_clock_speed(CPU_8MHz);
-	srand(8);
+	srand(35);
 	// Turn on back light
 	DDRC  |= 1 << PIN7;
   	PORTC |= 1 << PIN7;
@@ -89,6 +96,7 @@ void setup(){
 	clear_screen();
 
 	display_welcome_screen();
+	create_walls();
 	create_snake_train();
 	create_food();
 
@@ -103,7 +111,6 @@ void setup(){
     // Globally enable interrupts
     // TODO
     sei();
-
 }
 
 void process_loop(){
@@ -115,12 +122,18 @@ void process_loop(){
 	draw_sprite(&chow_time);
 	round_over = move_snake();
 	food_eaten_test();
-	//round_over = tail_collision_test();
 
+	if (walls_active){
+		draw_line(0, w1_y1_y2, w1_x2, w1_y1_y2);
+		draw_line(w2_x1_x2, 0, w2_x1_x2, w2_y2);
+		draw_line(w3_x1, w3_y1_y2, w3_x2, w3_y1_y2);
+	}
 
 	for (int i = 0; i < snake_length; i++) {
 		draw_sprite(&snake_train[i]);
 	}
+
+
 	show_screen();
 	
 
@@ -135,15 +148,46 @@ void process_loop(){
 
 }
 
+void create_walls(){
+    w1_y1_y2 = (rand() % 32) + 8;
+    w1_x2 = (rand() % 32) + 10;
+
+    w2_x1_x2 = (rand() % 53) + 30;
+    w2_y2 = (rand() % 11) + 10;
+
+    w3_x1 = 83;
+    w3_y1_y2 = rand() % 40;
+    w3_x2 = 73 - (rand() % 32);
+}
+
+void create_food_co_ords(int *x, int *y){
+	int check_food_collision = FALSE;
+	int inf_loop_protection = 20;
+
+	do{
+		*x = rand() % 82;
+		*y = rand() % 40;
+
+		if (*x <= 30 && *y <= 8) check_food_collision = TRUE; // Re-roll if on topbar
+		
+
+		if (*x <= w1_x2 && *y <= w1_y1_y2 && *y >= w1_y1_y2-2){
+			check_food_collision = TRUE; // Wall 1 test
+		} else if (*x <= w2_x1_x2 && *x >= w2_x1_x2-2 && *y < w2_y2){
+			check_food_collision = TRUE; // Wall 2 test
+		} else if (*x <= w3_x1 && *x >= w3_x2 && *y <= w3_y1_y2 && *y >= w3_y1_y2-2){
+			check_food_collision = TRUE; // Wall 3 test
+		}
+
+
+
+	} while(check_food_collision && inf_loop_protection-- > 0);
+}
+
 void create_food(){
-	int x = rand() % 82;
-	int y = rand() % 40;
+	int x = 0, y = 0;
 
-	while (x <= 30 && y <= 8){
-		x = rand() % 82;
-		y = rand() % 40;
-	}
-
+	create_food_co_ords(&x, &y);
 	init_sprite(&chow_time, x, y, 3, 3, food_bitmap);
 }
 
@@ -153,16 +197,17 @@ void food_eaten_test(){
 
 	if (((fx <= sx+2 && fx >= sx) || (sx <= fx+2 && sx >= fx)) && 
 		((fy <= sy+2 && fy >= sy) || (sy <= fy+2 && sy >= fy))) {
+
 		score++;
-		grow_snake_train();
+		if (snake_length <= 80) grow_snake_train(); // Prevent seg fault
 
-		chow_time.x = rand() % 82;
-		chow_time.y = rand() % 40;
+		int x = chow_time.x;
+		int y = chow_time.y;
 
-		while (chow_time.x <= 30 && chow_time.y <= 8){
-			chow_time.x = rand() % 82;
-			chow_time.y = rand() % 40;
-		}
+		create_food_co_ords(&x, &y);
+
+		chow_time.x = x;
+		chow_time.y = y;
 	}
 }
 
@@ -294,6 +339,12 @@ ISR(TIMER0_OVF_vect) {
             btn_states[i] = BTN_STATE_UP;
         }
     }
+
+	if (btn_states[BTN_RIGHT] == BTN_STATE_DOWN){
+		walls_active = TRUE;
+	} else if (btn_states[BTN_LEFT] == BTN_STATE_DOWN){
+		walls_active = FALSE;
+	}
 
 	// Joystick - Move Up/Down
 	if (btn_states[BTN_DPAD_UP] == BTN_STATE_DOWN){
