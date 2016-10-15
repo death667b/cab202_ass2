@@ -33,6 +33,8 @@
 #define BTN_STATE_DOWN 1
 
 void setup(void);
+void adc_init(void);
+uint16_t adc_read(uint8_t ch);
 void create_walls(void);
 void process_loop(void);
 void display_welcome_screen(void);
@@ -40,6 +42,7 @@ void draw_topbar(void);
 void restart_round(void);
 void create_food(void);
 void food_eaten_test(void);
+void snake_speed(long delay_time);
 void create_snake_train(void);
 void grow_snake_train(void);
 void create_food_co_ords(int *x, int *y);
@@ -59,6 +62,7 @@ volatile unsigned char btn_hists[NUM_BUTTONS];
 volatile unsigned char btn_states[NUM_BUTTONS];
 volatile int move_x = 0, move_y = 0;
 volatile int walls_active = FALSE;
+volatile long adc_value = 40;
 
 
 Sprite *snake_train = NULL;
@@ -77,19 +81,22 @@ int main(){
 	
 	return 0;
 }
-
+uint16_t adc_result1;
 
 void setup(){
 	set_clock_speed(CPU_8MHz);
-	srand(35);
+
 	// Turn on back light
 	DDRC  |= 1 << PIN7;
   	PORTC |= 1 << PIN7;
 
-	// Get our data directions set up as we please (everything is an output unless specified...)
-	DDRB = 0b01111100;
-	DDRF = 0b10011111;
-	DDRD = 0b11111100;
+  	DDRB &= ~(1<<PIN7 | 1<<PIN1);
+  	DDRF &= ~(1<<PIN5 | 1<<PIN6);
+  	DDRD &= ~(1<<PIN0 | 1<<PIN1);
+
+	adc_init();
+
+	srand((long)adc_read(4));
 
 	// Initialise the LCD screen
 	lcd_init(LCD_DEFAULT_CONTRAST);
@@ -108,8 +115,15 @@ void setup(){
 
     TIMSK0 |= 1 << TOIE0;
 
+    TCCR1B &= ~(1 << WGM12);
+
+    TCCR1B &= ~(1 << CS12);
+    TCCR1B &= ~(1 << CS11);
+    TCCR1B |= (1 << CS10);
+
+    TIMSK1 |= 1 << TOIE1;
+
     // Globally enable interrupts
-    // TODO
     sei();
 }
 
@@ -142,10 +156,48 @@ void process_loop(){
 	}
 	
 
-	_delay_ms(350);
+	//_delay_ms((long)adc_read(1));
+
+	snake_speed(adc_value);
+
+}
 
 
+void snake_speed(long delay_time) {
+	while(delay_time--) {
+		_delay_ms(1);
+	}
+}
 
+
+void adc_init()
+{
+    // AREF = AVcc
+    ADMUX = (1<<REFS0);
+ 
+    // ADC Enable and pre-scaler of 128
+    // 8000000/128 = 62500
+    ADCSRA = (1<<ADEN)|(1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0);
+}
+
+uint16_t adc_read(uint8_t ch)
+{
+    // select the corresponding channel 0~7
+    // ANDing with '7' will always keep the value
+    // of 'ch' between 0 and 7
+    ch &= 0b00000111;  // AND operation with 7
+    ADMUX = (ADMUX & 0xF8)|ch;     // clears the bottom 3 bits before ORing
+ 
+    // start single conversion
+    // write '1' to ADSC
+    ADCSRA |= (1<<ADSC);
+ 
+    // wait for conversion to complete
+    // ADSC becomes '0' again
+    // till then, run loop continuously
+    while(ADCSRA & (1<<ADSC));
+ 
+    return (ADC);
 }
 
 void create_walls(){
@@ -162,26 +214,19 @@ void create_walls(){
 
 void create_food_co_ords(int *x, int *y){
 	int check_food_collision = FALSE;
-	int inf_loop_protection = 20;
 
 	do{
 		*x = rand() % 82;
 		*y = rand() % 40;
 
+		check_food_collision = FALSE;
+
 		if (*x <= 30 && *y <= 8) check_food_collision = TRUE; // Re-roll if on topbar
+		if (*x <= w1_x2 && *y <= w1_y1_y2 && *y >= w1_y1_y2-2) check_food_collision = TRUE; // Wall 1 test
+		if (*x <= w2_x1_x2 && *x >= w2_x1_x2-2 && *y < w2_y2) check_food_collision = TRUE; // Wall 2 test
+		if (*x <= w3_x1 && *x >= w3_x2 && *y <= w3_y1_y2 && *y >= w3_y1_y2-2) check_food_collision = TRUE; // Wall 3 test
 		
-
-		if (*x <= w1_x2 && *y <= w1_y1_y2 && *y >= w1_y1_y2-2){
-			check_food_collision = TRUE; // Wall 1 test
-		} else if (*x <= w2_x1_x2 && *x >= w2_x1_x2-2 && *y < w2_y2){
-			check_food_collision = TRUE; // Wall 2 test
-		} else if (*x <= w3_x1 && *x >= w3_x2 && *y <= w3_y1_y2 && *y >= w3_y1_y2-2){
-			check_food_collision = TRUE; // Wall 3 test
-		}
-
-
-
-	} while(check_food_collision && inf_loop_protection-- > 0);
+	} while(check_food_collision);
 }
 
 void create_food(){
@@ -314,8 +359,8 @@ void display_welcome_screen(){
 }
 
 void draw_topbar(){
-	char f_score[5];
-	sprintf(f_score, "%.2d (%d)", score, lives);
+	char f_score[10];
+	sprintf(f_score, "%03d (%d)",score , lives);
 	draw_string(0,0, f_score);
 	show_screen();
 }
@@ -359,4 +404,11 @@ ISR(TIMER0_OVF_vect) {
 	} else if (btn_states[BTN_DPAD_RIGHT] == BTN_STATE_DOWN){
 		move_x= 1; move_y = 0;
 	}
+}
+
+
+
+ISR(TIMER1_OVF_vect) {
+	float max_adc = 1023.0;
+	adc_value = 50+((adc_read(1)*(long)100) / max_adc);
 }
